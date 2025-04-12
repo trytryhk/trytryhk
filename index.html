@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>觸控嘉年華射擊</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            touch-action: none;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #background-layer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+        #gameCanvas {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+        }
+        #foreground-layer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 3;
+            pointer-events: none;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            z-index: 4;
+        }
+        #fireBtn {
+            width: 80px;
+            height: 80px;
+            opacity: 0.8;
+            transition: transform 0.1s;
+            pointer-events: auto;
+        }
+        #restartBtn {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 120px;
+            height: 50px;
+            display: none;
+            cursor: pointer;
+            pointer-events: auto;
+            z-index: 5;
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial;
+            font-size: 24px;
+            text-shadow: 2px 2px 2px black;
+            z-index: 4;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <img id="background-layer" src="images/background_bottom.png">
+        <canvas id="gameCanvas"></canvas>
+        <img id="foreground-layer" src="images/background_top.png">
+        <div id="hud">得分: 0 | 剩余: 5</div>
+        <div id="controls">
+            <img id="fireBtn" src="images/fire_button.png">
+        </div>
+        <img id="restartBtn" src="images/restart_button.png">
+    </div>
+
+<script>
+(() => {
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let devicePixelRatio = window.devicePixelRatio || 1;
+    
+    function resize() {
+        canvas.width = window.innerWidth * devicePixelRatio;
+        canvas.height = window.innerHeight * devicePixelRatio;
+        canvas.style.width = window.innerWidth + 'px';
+        canvas.style.height = window.innerHeight + 'px';
+        ctx.scale(devicePixelRatio, devicePixelRatio);
+
+        document.getElementById('background-layer').style.width = window.innerWidth + 'px';
+        document.getElementById('background-layer').style.height = window.innerHeight + 'px';
+        document.getElementById('foreground-layer').style.width = window.innerWidth + 'px';
+        document.getElementById('foreground-layer').style.height = window.innerHeight + 'px';
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    class Game {
+        constructor() {
+            this.assets = {
+                launcher: this.loadImage('images/launcher.png'),
+                bullet: this.loadImage('images/bullet.png'),
+                targets: Array.from({length:5}, (_,i) => 
+                    this.loadImage(`images/target${i+1}.png`)),
+                fireBtn: document.getElementById('fireBtn'),
+                restartBtn: document.getElementById('restartBtn')
+            };
+            
+            this.state = {
+                score: 0,
+                shotsLeft: 5,
+                targets: [],
+                bullets: [],
+                effects: [],
+                isGameOver: false,
+                spawnRates: [5, 15, 40, 15, 25],
+                scoreValues: [5, 3, 1, -2, -1],
+                lastSpawnTime: 0
+            };
+
+            this.setupEvents();
+            this.gameLoop();
+        }
+
+        loadImage(src) {
+            const img = new Image();
+            img.src = src;
+            return img;
+        }
+
+        setupEvents() {
+            const fireBtn = this.assets.fireBtn;
+            const restartBtn = this.assets.restartBtn;
+            
+            const handleFire = () => {
+                if(this.state.isGameOver) return;
+                if(this.state.shotsLeft > 0) {
+                    this.fireBullet();
+                    fireBtn.style.transform = 'scale(0.9)';
+                    setTimeout(() => fireBtn.style.transform = 'scale(1)', 100);
+                }
+            };
+
+            fireBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                handleFire();
+            });
+            fireBtn.addEventListener('mousedown', handleFire);
+
+            const handleRestart = () => {
+                this.state = {
+                    ...this.state,
+                    score: 0,
+                    shotsLeft: 5,
+                    targets: [],
+                    bullets: [],
+                    effects: [],
+                    isGameOver: false,
+                    lastSpawnTime: 0
+                };
+                restartBtn.style.display = 'none';
+                fireBtn.style.opacity = '0.8';
+                document.getElementById('hud').textContent = '得分: 0 | 剩余: 5';
+            };
+
+            restartBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                handleRestart();
+            });
+            restartBtn.addEventListener('mousedown', handleRestart);
+        }
+
+        fireBullet() {
+            const bullet = {
+                x: (canvas.width/2 / devicePixelRatio) - 10,
+                y: (canvas.height / devicePixelRatio) - 120,
+                width: 20,
+                height: 30,
+                img: this.assets.bullet
+            };
+            this.state.bullets.push(bullet);
+            this.state.shotsLeft--;
+            document.getElementById('hud').textContent = 
+                `得分: ${this.state.score} | 剩余: ${this.state.shotsLeft}`;
+        }
+
+        gameLoop() {
+            const loop = (timestamp) => {
+                if(!this.state.isGameOver) {
+                    this.update(timestamp);
+                    this.render();
+                }
+                requestAnimationFrame(loop);
+            };
+            requestAnimationFrame(loop);
+        }
+
+        update(timestamp) {
+            // 生成新目标
+            if(timestamp - this.state.lastSpawnTime > 500) {
+                this.state.targets.push(new Target(
+                    this.state.spawnRates,
+                    Math.random() > 0.5 ? 'left' : 'right'
+                ));
+                this.state.lastSpawnTime = timestamp;
+            }
+
+            // 更新对象位置
+            this.state.targets.forEach(target => target.update());
+            this.state.bullets.forEach(bullet => bullet.y -= 15);
+
+            // 碰撞检测和实时计分
+            for (let b = this.state.bullets.length - 1; b >= 0; b--) {
+                for (let t = this.state.targets.length - 1; t >= 0; t--) {
+                    if(this.checkCollision(this.state.bullets[b], this.state.targets[t])) {
+                        this.state.score += this.state.scoreValues[this.state.targets[t].type];
+                        document.getElementById('hud').textContent = 
+                            `得分: ${this.state.score} | 剩余: ${this.state.shotsLeft}`;
+                        
+                        this.state.effects.push(new HitEffect(
+                            this.state.targets[t].x + this.state.targets[t].width/2,
+                            this.state.targets[t].y + this.state.targets[t].height/2
+                        ));
+                        this.state.bullets.splice(b, 1);
+                        this.state.targets.splice(t, 1);
+                        break;
+                    }
+                }
+            }
+
+            // 过滤消失对象
+            this.state.targets = this.state.targets.filter(target => 
+                target.x > -target.width * 2 && 
+                target.x < canvas.width / devicePixelRatio + target.width * 2
+            );
+            this.state.bullets = this.state.bullets.filter(bullet => bullet.y > 0);
+
+            // 游戏结束判断
+            if(this.state.shotsLeft <= 0 && 
+               this.state.bullets.length === 0 &&
+               !this.state.isGameOver) {
+                this.state.isGameOver = true;
+                this.assets.restartBtn.style.display = 'block';
+                this.assets.fireBtn.style.opacity = '0.4';
+            }
+        }
+
+        render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制发射器
+            ctx.drawImage(
+                this.assets.launcher,
+                canvas.width/2 / devicePixelRatio - 50,
+                canvas.height / devicePixelRatio - 180,
+                100, 200
+            );
+
+            // 绘制子弹
+            this.state.bullets.forEach(bullet => {
+                ctx.drawImage(bullet.img, bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+
+            // 绘制目标
+            this.state.targets.forEach(target => target.draw(ctx, this.assets.targets));
+
+            // 绘制命中效果
+            this.state.effects.forEach(effect => effect.draw(ctx));
+        }
+
+        checkCollision(bullet, target) {
+            return bullet.x < target.x + target.width &&
+                   bullet.x + bullet.width > target.x &&
+                   bullet.y < target.y + target.height &&
+                   bullet.y + bullet.height > target.y;
+        }
+    }
+
+    class Target {
+        constructor(spawnRates, direction) {
+            this.type = this.getRandomType(spawnRates);
+            this.width = 60;
+            this.height = 60;
+            this.direction = direction;
+            this.speed = direction === 'left' ? -4 : 4;
+            
+            if(direction === 'left') {
+                this.x = canvas.width / devicePixelRatio + this.width;
+                this.y = 300 + Math.random() * 300;
+            } else {
+                this.x = -this.width;
+                this.y = 300 + Math.random() * 300;
+            }
+        }
+
+        getRandomType(weights) {
+            const total = weights.reduce((a,b) => a + b);
+            let rand = Math.random() * total;
+            return weights.findIndex(w => (rand -= w) < 0);
+        }
+
+        update() {
+            this.x += this.speed;
+        }
+
+        draw(ctx, targetImages) {
+            ctx.drawImage(
+                targetImages[this.type],
+                this.x, this.y, this.width, this.height
+            );
+        }
+    }
+
+    class HitEffect {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.radius = 0;
+            this.maxRadius = 40;
+            this.duration = 300;
+            this.startTime = Date.now();
+        }
+
+        update() {
+            const progress = Date.now() - this.startTime;
+            this.radius = (progress / this.duration) * this.maxRadius;
+            return progress < this.duration;
+        }
+
+        draw(ctx) {
+            ctx.strokeStyle = `rgba(255, 50, 50, ${1 - this.radius/this.maxRadius})`;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+    }
+
+    new Game();
+})();
+</script>
+</body>
+</html>
